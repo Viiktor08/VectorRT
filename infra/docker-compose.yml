@@ -8,6 +8,11 @@ networks:
     ipam:
       config:
         - subnet: 10.10.10.0/24
+  # Red no interna, solo para publicar el puerto de la API hacia el host.
+  # Docker no publica puertos de contenedores que solo están en una red
+  # `internal: true`, así que el backend necesita esta segunda pata.
+  vectorrt-api:
+    driver: bridge
 
 services:
   ssh-target:
@@ -39,3 +44,23 @@ services:
     networks:
       vectorrt-lab:
         ipv4_address: 10.10.10.20
+
+  backend:
+    build:
+      context: ../backend
+    container_name: backend
+    # nmap -sS e hping3 necesitan poder abrir sockets raw.
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    environment:
+      - LOG_LEVEL=INFO
+    volumes:
+      - ../backend/app:/app/app
+    ports:
+      - "8000:8000"
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    networks:
+      vectorrt-lab:
+        ipv4_address: 10.10.10.30
+      vectorrt-api: {}

@@ -1,0 +1,65 @@
+import asyncio
+import shutil
+import time
+
+from app.config import is_target_allowed
+from app.logging_config import logger
+
+PORT_SCAN_TIMEOUT_SECONDS = 60
+
+
+class TargetNotAllowedError(Exception):
+    pass
+
+
+class ScanTimeoutError(Exception):
+    pass
+
+
+async def run_port_scan(target_ip: str) -> dict:
+    if not is_target_allowed(target_ip):
+        logger.warning("port-scan rechazado, target fuera de whitelist: %s", target_ip)
+        raise TargetNotAllowedError(f"Target no permitido: {target_ip}")
+
+    nmap_path = shutil.which("nmap")
+    if nmap_path is None:
+        raise RuntimeError("nmap no está instalado en este host")
+
+    # Flags fijos: el usuario nunca puede inyectar flags arbitrarios de nmap.
+    cmd = [nmap_path, "-sV", "-p", "1-1000", target_ip]
+
+    logger.info("port-scan iniciado target=%s cmd=%s", target_ip, " ".join(cmd))
+    started_at = time.monotonic()
+
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(), timeout=PORT_SCAN_TIMEOUT_SECONDS
+        )
+    except asyncio.TimeoutError:
+        process.kill()
+        await process.wait()
+        logger.error("port-scan timeout target=%s tras %ss", target_ip, PORT_SCAN_TIMEOUT_SECONDS)
+        raise ScanTimeoutError(f"Escaneo de {target_ip} superó {PORT_SCAN_TIMEOUT_SECONDS}s")
+
+    duration = time.monotonic() - started_at
+    logger.info(
+        "port-scan finalizado target=%s returncode=%s duration=%.2fs",
+        target_ip,
+        process.returncode,
+        duration,
+    )
+
+    return {
+        "target_ip": target_ip,
+        "command": " ".join(cmd),
+        "returncode": process.returncode,
+        "duration_seconds": duration,
+        "stdout": stdout.decode(errors="replace"),
+        "stderr": stderr.decode(errors="replace"),
+    }
