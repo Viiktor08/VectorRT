@@ -3,13 +3,14 @@ from fastapi import FastAPI
 
 from app.config import ALLOWED_TARGETS
 from app.logging_config import configure_logging
-from app.routers import attacks
+from app.routers import attacks, ws_attacks
 
 load_dotenv()
 configure_logging()
 
 app = FastAPI(title="VectorRT API")
 app.include_router(attacks.router)
+app.include_router(ws_attacks.router)
 
 
 @app.get("/health")
