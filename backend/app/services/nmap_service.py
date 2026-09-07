@@ -1,20 +1,12 @@
-import asyncio
 import shutil
-import time
 from collections.abc import AsyncIterator
 
 from app.config import is_target_allowed
 from app.logging_config import logger
+from app.services.errors import TargetNotAllowedError
+from app.services.process_runner import run_and_collect, stream_and_collect
 
 PORT_SCAN_TIMEOUT_SECONDS = 60
-
-
-class TargetNotAllowedError(Exception):
-    pass
-
-
-class ScanTimeoutError(Exception):
-    pass
 
 
 def _build_port_scan_command(target_ip: str) -> list[str]:
@@ -30,81 +22,12 @@ def _build_port_scan_command(target_ip: str) -> list[str]:
     return [nmap_path, "-sV", "-p", "1-1000", target_ip]
 
 
-async def run_port_scan(target_ip: str) -> dict:
+async def run_port_scan(target_ip: str, **_params) -> dict:
     cmd = _build_port_scan_command(target_ip)
-
-    logger.info("port-scan iniciado target=%s cmd=%s", target_ip, " ".join(cmd))
-    started_at = time.monotonic()
-
-    process = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-
-    try:
-        stdout, stderr = await asyncio.wait_for(
-            process.communicate(), timeout=PORT_SCAN_TIMEOUT_SECONDS
-        )
-    except asyncio.TimeoutError:
-        process.kill()
-        await process.wait()
-        logger.error("port-scan timeout target=%s tras %ss", target_ip, PORT_SCAN_TIMEOUT_SECONDS)
-        raise ScanTimeoutError(f"Escaneo de {target_ip} superó {PORT_SCAN_TIMEOUT_SECONDS}s")
-
-    duration = time.monotonic() - started_at
-    logger.info(
-        "port-scan finalizado target=%s returncode=%s duration=%.2fs",
-        target_ip,
-        process.returncode,
-        duration,
-    )
-
-    return {
-        "target_ip": target_ip,
-        "command": " ".join(cmd),
-        "returncode": process.returncode,
-        "duration_seconds": duration,
-        "stdout": stdout.decode(errors="replace"),
-        "stderr": stderr.decode(errors="replace"),
-    }
+    result = await run_and_collect(cmd, timeout_seconds=PORT_SCAN_TIMEOUT_SECONDS, log_label="port-scan")
+    return {"target_ip": target_ip, **result}
 
 
-async def stream_port_scan(target_ip: str) -> AsyncIterator[str]:
-    """Ejecuta el escaneo y va cediendo cada línea de salida a medida que nmap la produce."""
+def stream_port_scan(target_ip: str, *, result: dict | None = None, **_params) -> AsyncIterator[str]:
     cmd = _build_port_scan_command(target_ip)
-
-    logger.info("port-scan (stream) iniciado target=%s cmd=%s", target_ip, " ".join(cmd))
-    started_at = time.monotonic()
-
-    process = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-    )
-
-    try:
-        while True:
-            remaining = PORT_SCAN_TIMEOUT_SECONDS - (time.monotonic() - started_at)
-            if remaining <= 0:
-                raise asyncio.TimeoutError
-            line = await asyncio.wait_for(process.stdout.readline(), timeout=remaining)
-            if not line:
-                break
-            yield line.decode(errors="replace").rstrip("\n")
-    except asyncio.TimeoutError:
-        process.kill()
-        await process.wait()
-        logger.error("port-scan (stream) timeout target=%s tras %ss", target_ip, PORT_SCAN_TIMEOUT_SECONDS)
-        raise ScanTimeoutError(f"Escaneo de {target_ip} superó {PORT_SCAN_TIMEOUT_SECONDS}s")
-    finally:
-        if process.returncode is None:
-            await process.wait()
-
-    duration = time.monotonic() - started_at
-    logger.info(
-        "port-scan (stream) finalizado target=%s returncode=%s duration=%.2fs",
-        target_ip,
-        process.returncode,
-        duration,
-    )
+    return stream_and_collect(cmd, timeout_seconds=PORT_SCAN_TIMEOUT_SECONDS, log_label="port-scan", result=result)

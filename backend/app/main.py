@@ -2,11 +2,13 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 
 from app.config import ALLOWED_TARGETS
+from app.db import init_db
 from app.logging_config import configure_logging
 from app.routers import attacks, ws_attacks
 
 load_dotenv()
 configure_logging()
+init_db()
 
 app = FastAPI(title="VectorRT API")
 app.include_router(attacks.router)

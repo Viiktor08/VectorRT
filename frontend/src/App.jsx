@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import TargetSelector from './components/TargetSelector'
 import AttackButtons from './components/AttackButtons'
 import ResultsPanel from './components/ResultsPanel'
+import HistoryTable from './components/HistoryTable'
 
 export default function App() {
   const [targets, setTargets] = useState([])
@@ -9,6 +10,7 @@ export default function App() {
   const [status, setStatus] = useState('idle') // idle | running | done | error
   const [lines, setLines] = useState([])
   const [errorMessage, setErrorMessage] = useState('')
+  const [historyVersion, setHistoryVersion] = useState(0)
   const wsRef = useRef(null)
 
   useEffect(() => {
@@ -20,7 +22,7 @@ export default function App() {
 
   useEffect(() => () => wsRef.current?.close(), [])
 
-  function runAttack(attackType) {
+  function runAttack(attackType, extraParams = {}) {
     if (!targetIp || status === 'running') return
 
     setStatus('running')
@@ -29,7 +31,12 @@ export default function App() {
 
     const jobId = crypto.randomUUID()
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const url = `${protocol}://${window.location.host}/ws/attacks/${jobId}?attack_type=${attackType}&target_ip=${targetIp}`
+    const query = new URLSearchParams({
+      attack_type: attackType,
+      target_ip: targetIp,
+      ...extraParams,
+    })
+    const url = `${protocol}://${window.location.host}/ws/attacks/${jobId}?${query}`
     const ws = new WebSocket(url)
     wsRef.current = ws
 
@@ -39,9 +46,11 @@ export default function App() {
         setLines((prev) => [...prev, msg.data])
       } else if (msg.type === 'done') {
         setStatus('done')
+        setHistoryVersion((v) => v + 1)
       } else if (msg.type === 'error') {
         setStatus('error')
         setErrorMessage(msg.message)
+        setHistoryVersion((v) => v + 1)
       }
     }
 
@@ -65,6 +74,8 @@ export default function App() {
       <AttackButtons disabled={!targetIp} running={status === 'running'} onRun={runAttack} />
 
       <ResultsPanel status={status} lines={lines} errorMessage={errorMessage} />
+
+      <HistoryTable refreshKey={historyVersion} />
     </div>
   )
 }

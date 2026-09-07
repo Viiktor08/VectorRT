@@ -3,7 +3,7 @@ FROM python:3.12-slim
 # nmap, hydra e hping3 viven en el contenedor del backend: es quien ejecuta los
 # ataques contra el resto del lab, no la máquina anfitriona.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends nmap hydra hping3 && \
+    apt-get install -y --no-install-recommends nmap hydra hping3 siege && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
