@@ -1,0 +1,23 @@
+# Environments / secrets
+.env
+.env.*
+!.env.example
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.db
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# OS
+.DS_Store
+
+# Lab / attack artifacts
+*.log
+wordlists/*.txt
+!wordlists/.gitkeep

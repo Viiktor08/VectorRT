@@ -1,0 +1,41 @@
+# Laboratorio aislado de VectorRT (Fase 0).
+# Red interna sin salida a internet: los contenedores solo se ven entre sí.
+
+networks:
+  vectorrt-lab:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.10.10.0/24
+
+services:
+  ssh-target:
+    build: ./targets/ssh-target
+    container_name: ssh-target
+    networks:
+      vectorrt-lab:
+        ipv4_address: 10.10.10.10
+
+  web-target:
+    build: ./targets/web-target
+    container_name: web-target
+    networks:
+      vectorrt-lab:
+        ipv4_address: 10.10.10.11
+
+  multi-target:
+    build: ./targets/multi-target
+    container_name: multi-target
+    networks:
+      vectorrt-lab:
+        ipv4_address: 10.10.10.12
+
+  attacker:
+    build: ./attacker
+    container_name: attacker
+    stdin_open: true
+    tty: true
+    networks:
+      vectorrt-lab:
+        ipv4_address: 10.10.10.20
