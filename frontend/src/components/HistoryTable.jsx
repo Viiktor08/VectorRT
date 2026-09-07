@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
+import { AuthExpiredError, authFetch } from '../auth'
 
 const STATUS_COLORS = {
   success: 'text-green-400',
@@ -10,18 +11,21 @@ function formatDate(iso) {
   return new Date(iso).toLocaleString()
 }
 
-export default function HistoryTable({ refreshKey }) {
+export default function HistoryTable({ token, refreshKey, onAuthExpired }) {
   const [jobs, setJobs] = useState([])
   const [expandedId, setExpandedId] = useState(null)
   const [detail, setDetail] = useState(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
 
   useEffect(() => {
-    fetch('/api/attacks/history')
+    authFetch(token, '/api/attacks/history')
       .then((res) => res.json())
       .then(setJobs)
-      .catch(() => setJobs([]))
-  }, [refreshKey])
+      .catch((err) => {
+        if (err instanceof AuthExpiredError) onAuthExpired()
+        else setJobs([])
+      })
+  }, [refreshKey, token, onAuthExpired])
 
   async function toggleDetail(jobId) {
     if (expandedId === jobId) {
@@ -33,8 +37,10 @@ export default function HistoryTable({ refreshKey }) {
     setDetail(null)
     setLoadingDetail(true)
     try {
-      const res = await fetch(`/api/attacks/history/${jobId}`)
+      const res = await authFetch(token, `/api/attacks/history/${jobId}`)
       setDetail(await res.json())
+    } catch (err) {
+      if (err instanceof AuthExpiredError) onAuthExpired()
     } finally {
       setLoadingDetail(false)
     }

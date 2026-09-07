@@ -3,8 +3,11 @@ import TargetSelector from './components/TargetSelector'
 import AttackButtons from './components/AttackButtons'
 import ResultsPanel from './components/ResultsPanel'
 import HistoryTable from './components/HistoryTable'
+import Login from './components/Login'
+import { AuthExpiredError, authFetch, clearToken, getStoredToken, storeToken } from './auth'
 
 export default function App() {
+  const [token, setToken] = useState(() => getStoredToken())
   const [targets, setTargets] = useState([])
   const [targetIp, setTargetIp] = useState('')
   const [status, setStatus] = useState('idle') // idle | running | done | error
@@ -13,12 +16,27 @@ export default function App() {
   const [historyVersion, setHistoryVersion] = useState(0)
   const wsRef = useRef(null)
 
+  function handleLogin(newToken) {
+    storeToken(newToken)
+    setToken(newToken)
+  }
+
+  function handleAuthExpired() {
+    clearToken()
+    setToken(null)
+    wsRef.current?.close()
+  }
+
   useEffect(() => {
-    fetch('/api/targets')
+    if (!token) return
+    authFetch(token, '/api/targets')
       .then((res) => res.json())
       .then(setTargets)
-      .catch(() => setTargets([]))
-  }, [])
+      .catch((err) => {
+        if (err instanceof AuthExpiredError) handleAuthExpired()
+        else setTargets([])
+      })
+  }, [token])
 
   useEffect(() => () => wsRef.current?.close(), [])
 
@@ -34,6 +52,7 @@ export default function App() {
     const query = new URLSearchParams({
       attack_type: attackType,
       target_ip: targetIp,
+      token,
       ...extraParams,
     })
     const url = `${protocol}://${window.location.host}/ws/attacks/${jobId}?${query}`
@@ -60,13 +79,26 @@ export default function App() {
     }
   }
 
+  if (!token) {
+    return <Login onLogin={handleLogin} />
+  }
+
   return (
     <div className="min-h-screen max-w-3xl mx-auto px-6 py-10 flex flex-col gap-6">
-      <header>
-        <h1 className="text-2xl font-semibold text-white">VectorRT</h1>
-        <p className="text-sm text-gray-400">
-          Laboratorio de red team contra infraestructura propia y aislada.
-        </p>
+      <header className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-white">VectorRT</h1>
+          <p className="text-sm text-gray-400">
+            Laboratorio de red team contra infraestructura propia y aislada.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleAuthExpired}
+          className="text-xs text-gray-500 hover:text-gray-300 underline"
+        >
+          Cerrar sesión
+        </button>
       </header>
 
       <TargetSelector targets={targets} value={targetIp} onChange={setTargetIp} />
@@ -75,7 +107,7 @@ export default function App() {
 
       <ResultsPanel status={status} lines={lines} errorMessage={errorMessage} />
 
-      <HistoryTable refreshKey={historyVersion} />
+      <HistoryTable token={token} refreshKey={historyVersion} onAuthExpired={handleAuthExpired} />
     </div>
   )
 }

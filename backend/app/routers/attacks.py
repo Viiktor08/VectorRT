@@ -1,7 +1,8 @@
 from contextlib import contextmanager
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
+from app.auth import get_current_user
 from app.db import SessionLocal
 from app.db.models import AttackJob
 from app.models.attacks import (
@@ -11,6 +12,7 @@ from app.models.attacks import (
     LoadTestRequest,
     TargetRequest,
 )
+from app.rate_limit import limiter
 from app.services import attack_runner
 from app.services.errors import (
     InvalidAttackParamsError,
@@ -19,7 +21,7 @@ from app.services.errors import (
     TargetNotAllowedError,
 )
 
-router = APIRouter(prefix="/api/attacks", tags=["attacks"])
+router = APIRouter(prefix="/api/attacks", tags=["attacks"], dependencies=[Depends(get_current_user)])
 
 
 @contextmanager
@@ -37,27 +39,30 @@ def _translate_attack_errors():
 
 
 @router.post("/port-scan", response_model=AttackResultResponse)
-async def port_scan(request: TargetRequest) -> AttackResultResponse:
+@limiter.limit("10/minute")
+async def port_scan(request: Request, body: TargetRequest) -> AttackResultResponse:
     with _translate_attack_errors():
-        result = await attack_runner.run_attack("port-scan", str(request.target_ip))
+        result = await attack_runner.run_attack("port-scan", str(body.target_ip))
     return AttackResultResponse(**result)
 
 
 @router.post("/ssh-bruteforce", response_model=AttackResultResponse)
-async def ssh_bruteforce(request: TargetRequest) -> AttackResultResponse:
+@limiter.limit("10/minute")
+async def ssh_bruteforce(request: Request, body: TargetRequest) -> AttackResultResponse:
     with _translate_attack_errors():
-        result = await attack_runner.run_attack("ssh-bruteforce", str(request.target_ip))
+        result = await attack_runner.run_attack("ssh-bruteforce", str(body.target_ip))
     return AttackResultResponse(**result)
 
 
 @router.post("/load-test", response_model=AttackResultResponse)
-async def load_test(request: LoadTestRequest) -> AttackResultResponse:
+@limiter.limit("10/minute")
+async def load_test(request: Request, body: LoadTestRequest) -> AttackResultResponse:
     with _translate_attack_errors():
         result = await attack_runner.run_attack(
             "load-test",
-            str(request.target_ip),
-            duration_seconds=request.duration_seconds,
-            concurrency=request.concurrency,
+            str(body.target_ip),
+            duration_seconds=body.duration_seconds,
+            concurrency=body.concurrency,
         )
     return AttackResultResponse(**result)
 

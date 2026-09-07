@@ -1,16 +1,14 @@
 # VectorRT
 
-Plataforma web para lanzar ataques controlados (escaneo de puertos, fuerza bruta SSH, carga/DDoS pequeño) contra infraestructura **propia**, aislada en una red de laboratorio local.
-
-> ⚠️ Este proyecto está en desarrollo siguiendo el [roadmap](roadmap.md). Todavía no hay código de aplicación en el repositorio.
+Plataforma web para lanzar ataques controlados (escaneo de puertos, fuerza bruta SSH, carga/DDoS pequeño) contra infraestructura **propia**, aislada en una red de laboratorio local con Docker.
 
 ## Uso responsable
 
 Esta herramienta está diseñada **exclusivamente** para ejecutarse contra hosts de un laboratorio propio, aislado de red (sin salida a internet ni a redes de terceros). No está pensada ni autorizada para atacar infraestructura que no controles o sobre la que no tengas permiso explícito.
 
-- Nunca apuntes esta plataforma a IPs o dominios que no sean de tu propio laboratorio.
-- No expongas la plataforma en redes públicas sin autenticación.
-- No commitees IPs de producción, credenciales del lab ni wordlists sensibles — usa `.env` / `.env.example`.
+- Nunca apuntes esta plataforma a IPs o dominios que no sean de tu propio laboratorio — el backend rechaza cualquier IP fuera de una whitelist fija, pero esa whitelist eres tú quien la define.
+- No expongas el puerto del backend/frontend fuera de tu máquina sin entender las implicaciones (hay login, pero las credenciales por defecto son de desarrollo).
+- No commitees credenciales reales ni claves de firma — usa `.env` / `.env.example` y `infra/.env` (ambos ignorados por git).
 
 ## Arquitectura
 
@@ -19,48 +17,102 @@ Esta herramienta está diseñada **exclusivamente** para ejecutarse contra hosts
 | Frontend | React + Vite + Tailwind |
 | Backend | FastAPI + Uvicorn |
 | Comunicación en vivo | WebSockets |
-| Cola de jobs | asyncio.Queue o Celery + Redis |
-| Base de datos | SQLite → PostgreSQL |
-| Herramientas de ataque | nmap, hydra, hping3/siege |
-| Infra de lab | Docker Compose / VirtualBox / Proxmox, red aislada |
-| Defensa (opcional) | fail2ban, Suricata/Zeek |
+| Autenticación | JWT (login usuario/contraseña) |
+| Cola de jobs | Lock en memoria (`asyncio.Lock`), un ataque a la vez por target |
+| Base de datos | SQLite (SQLAlchemy), persistida en `backend/data/` |
+| Herramientas de ataque | nmap, hydra, siege — instaladas dentro del contenedor del backend |
+| Infra de lab | Docker Compose, red interna aislada (`internal: true`) |
+
+El backend vive en **dos redes Docker**: la interna `vectorrt-lab` (`10.10.10.0/24`, sin salida a internet, donde también están los targets) para poder atacarlos, y una red normal `vectorrt-api` solo para publicar su puerto hacia tu Mac — Docker no publica puertos de un contenedor que esté únicamente en una red `internal`.
+
+```mermaid
+flowchart LR
+    subgraph host["Tu Mac"]
+        browser["Navegador\n(frontend Vite, :5173)"]
+    end
+
+    subgraph api_net["red vectorrt-api"]
+        browser -- "HTTP + WebSocket\n:8000" --> backend
+    end
+
+    subgraph lab_net["red vectorrt-lab (interna, 10.10.10.0/24, sin internet)"]
+        backend["backend\nFastAPI · nmap/hydra/siege\n10.10.10.30"]
+        ssh["ssh-target\n10.10.10.10"]
+        web["web-target\n10.10.10.11"]
+        multi["multi-target\n10.10.10.12"]
+        attacker["attacker\n10.10.10.20\n(validación manual)"]
+
+        backend -- ataques --> ssh
+        backend -- ataques --> web
+        backend -- ataques --> multi
+    end
+```
+
+## Estructura del repositorio
 
 ```
 VectorRT/
-  frontend/    # React + Vite + Tailwind
-  backend/     # FastAPI, servicios de ataque, modelos, rutas
-  infra/       # IaC / scripts de la red de laboratorio
-  docs/        # Topología de red, diagramas, notas
+  frontend/                 # React + Vite + Tailwind
+    src/
+      components/           # TargetSelector, AttackButtons, ResultsPanel, HistoryTable, Login
+      auth.js                # token de sesión (sessionStorage) + fetch autenticado
+      App.jsx
+  backend/                  # FastAPI
+    app/
+      auth.py                # login, JWT, dependencia get_current_user
+      config.py               # whitelist de targets, credenciales SSH/carga del lab
+      db/                      # modelos y sesión SQLAlchemy (SQLite)
+      models/                  # esquemas Pydantic de request/response
+      routers/                 # /api/auth, /api/attacks, /ws/attacks
+      services/                # nmap/hydra/siege, cola de jobs, runner de ataques
+    tests/                    # pytest
+  infra/                     # laboratorio Docker Compose
+    docker-compose.yml
+    targets/                  # Dockerfiles de ssh-target, web-target, multi-target
+    attacker/                 # Dockerfile del contenedor de validación manual
+  docs/
+    topologia-lab.md          # IPs, roles y puertos del laboratorio
+  roadmap.md
 ```
 
 ## Requisitos
 
-- Un entorno de virtualización (Docker Compose, VirtualBox/VMware o Proxmox) para levantar la red de laboratorio aislada.
-- Python 3.11+ y Node.js 18+.
-- Herramientas de red instaladas en la máquina/VM atacante: `nmap`, `hydra`, `hping3` (o `siege`/`ab`).
+- **Docker Desktop** — todo el laboratorio y el backend corren en contenedores multi-arch (funciona igual en Apple Silicon que en Intel).
+- **Node.js 18+** y **npm** — para el frontend en modo desarrollo.
+- **Python 3.11+** — opcional, solo si quieres correr el backend fuera de Docker o ejecutar los tests localmente.
 
-## Puesta en marcha
+## Primeros pasos
 
-### 1. Laboratorio
+### 1. (Opcional) Configura tus propias credenciales
 
-1. Crea una red virtual privada (ej. `10.10.10.0/24`) en modo *host-only*/*internal*, sin salida a internet.
-2. Levanta las VMs/contenedores objetivo (SSH target, web target, multi-service target) con IP estática.
-3. Valida manualmente cada herramienta de ataque contra los targets antes de integrarla en el backend.
-
-Detalles completos de esta fase en el [roadmap](roadmap.md#fase-0--preparación-del-entorno-de-laboratorio).
-
-### 2. Backend
+Por defecto el backend arranca con usuario `admin` / contraseña `changeme` y una clave de firma de desarrollo — funciona, pero el propio backend te avisará por log de que son valores de desarrollo. Para cambiarlos:
 
 ```bash
-cd backend
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env   # configura la whitelist de targets y demás variables
-uvicorn app.main:app --reload
+cp infra/.env.example infra/.env
+# edita infra/.env con tu usuario/contraseña y una clave propia:
+python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-### 3. Frontend
+`docker compose` carga `infra/.env` automáticamente por estar en el mismo directorio que `docker-compose.yml`.
+
+### 2. Levanta el laboratorio + el backend
+
+```bash
+cd infra
+docker compose up -d --build
+docker compose ps   # confirma que los 5 contenedores están "Up"
+```
+
+Esto construye y arranca `ssh-target`, `web-target`, `multi-target`, `attacker` (para validación manual) y `backend` — este último ya incluye `nmap`, `hydra` y `siege`, y publica la API en `http://localhost:8000`.
+
+Verifica que todo responde:
+
+```bash
+curl http://localhost:8000/health
+# {"status":"ok","db":true}
+```
+
+### 3. Levanta el frontend
 
 ```bash
 cd frontend
@@ -68,24 +120,58 @@ npm install
 npm run dev
 ```
 
-El frontend se conecta al backend vía proxy de desarrollo (`vite.config.js`) y consume tanto la API REST como el WebSocket de streaming de resultados.
+Abre la URL que imprima Vite (normalmente `http://localhost:5173`). El proxy de desarrollo (`vite.config.js`) reenvía `/api` y `/ws` al backend en `localhost:8000`.
+
+### 4. Inicia sesión
+
+Usa las credenciales del paso 1 (`admin` / `changeme` si no las cambiaste). La sesión se guarda en `sessionStorage` del navegador — sobrevive a recargas de página, no a cerrar la pestaña.
+
+### 5. Usa la plataforma
+
+1. Selecciona un target del desplegable (poblado desde la whitelist real del backend).
+2. Lanza un ataque: **Escaneo de puertos**, **Fuerza bruta SSH**, o **Carga / DDoS pequeño** (con duración/concurrencia acotadas).
+3. El resultado se transmite en vivo por WebSocket a la terminal en pantalla.
+4. Cada ejecución queda registrada en el **Histórico**, con botón "ver detalle" para el output completo.
+5. Si lanzas dos ataques contra el mismo target a la vez, el segundo se rechaza ("target ocupado") hasta que el primero termine.
+
+### Apagar todo
+
+```bash
+cd infra
+docker compose down
+```
+
+Los datos (SQLite + logs) viven en `backend/data/` en tu máquina, montados como volumen — sobreviven a `docker compose down` y a reconstruir las imágenes.
+
+## Ejecutar los tests del backend
+
+```bash
+cd backend
+python -m venv venv        # si no lo tienes ya creado
+source venv/bin/activate
+pip install -r requirements-dev.txt
+pytest
+```
 
 ## Roadmap
 
-El desarrollo está organizado en fases incrementales, cada una con un checklist propio:
+El desarrollo está organizado en fases incrementales:
 
-0. **Preparación del entorno de laboratorio** — red aislada y VMs objetivo.
-1. **Backend mínimo** — whitelist de targets y primer endpoint (escaneo de puertos).
-2. **Frontend básico + tiempo real** — UI de selección de target y streaming por WebSocket.
-3. **Módulos de ataque restantes + persistencia** — fuerza bruta SSH, carga/DDoS, base de datos, cola de jobs, histórico.
-4. **Endurecimiento** — autenticación, validación de inputs, rate limiting, observabilidad, documentación.
-5. **Blue Team (opcional)** — detección de los propios ataques (fail2ban, Suricata/Zeek) y reporte automático.
+- [x] **Fase 0** — Laboratorio Docker aislado (targets + red interna sin salida a internet).
+- [x] **Fase 1** — Backend mínimo: whitelist de targets, endpoint de escaneo de puertos.
+- [x] **Fase 2** — Frontend + streaming en tiempo real por WebSocket.
+- [x] **Fase 3** — Fuerza bruta SSH, carga/DDoS, persistencia en base de datos, cola de jobs, histórico.
+- [x] **Fase 4** — Autenticación JWT, rate limiting, logging rotado, `/health` con chequeo de DB.
+- [ ] **Fase 5** (opcional) — Blue Team: detección de los propios ataques (fail2ban/Suricata) y reporte automático.
 
-Ver el detalle completo en [roadmap.md](roadmap.md).
+Detalle completo de cada fase en [roadmap.md](roadmap.md) y de la topología de red en [docs/topologia-lab.md](docs/topologia-lab.md).
 
-## Principios de seguridad del propio backend
+## Seguridad implementada en la propia plataforma
 
-- Todo endpoint valida el target contra una whitelist antes de ejecutar cualquier comando.
-- Los comandos se ejecutan con `subprocess`/`asyncio.create_subprocess_exec` usando listas de argumentos, nunca `shell=True` con interpolación de strings del usuario.
-- Los inputs se validan y sanitizan con Pydantic (IPs, duraciones acotadas, parámetros predefinidos).
-- Límites duros en backend para los módulos de carga (duración y concurrencia máximas), independientes de lo que envíe el frontend.
+- **Whitelist de targets**: todo endpoint (REST y WebSocket) valida el target contra una lista fija en `app/config.py` antes de ejecutar nada.
+- **Sin inyección de comandos**: los ataques se ejecutan con `asyncio.create_subprocess_exec` y listas de argumentos fijas — nunca `shell=True` ni concatenación de strings del usuario.
+- **Validación de inputs**: Pydantic valida IPs (`IPvAnyAddress`) y acota duración/concurrencia del test de carga (`Field(ge=..., le=...)`), con los mismos límites duros repetidos en el propio servicio por si acaso.
+- **Autenticación**: login JWT; todos los endpoints de ataque y el WebSocket de streaming exigen un token válido.
+- **Rate limiting**: 10 peticiones/minuto por IP en login y en cada endpoint de ataque (`slowapi`), para que ni tú mismo lances 50 ataques por error en un bucle.
+- **Cola de jobs**: un único ataque a la vez por target, aplicado tanto en REST como en WebSocket.
+- **Observabilidad**: logging rotado a fichero (`backend/data/vectorrt.log`) y todo ataque queda persistido en SQLite con su estado, duración y output completo.

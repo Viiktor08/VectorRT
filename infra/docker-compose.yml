@@ -55,6 +55,9 @@ services:
       - NET_ADMIN
     environment:
       - LOG_LEVEL=INFO
+      - VECTORRT_USERNAME=${VECTORRT_USERNAME:-admin}
+      - VECTORRT_PASSWORD=${VECTORRT_PASSWORD:-changeme}
+      - VECTORRT_SECRET_KEY=${VECTORRT_SECRET_KEY:-dev-secret-change-me}
     volumes:
       - ../backend/app:/app/app
       - ../backend/data:/app/data

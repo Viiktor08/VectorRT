@@ -1,5 +1,6 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from app.auth import AuthError, get_user_from_ws_token
 from app.logging_config import logger
 from app.models.attacks import LoadTestRequest, TargetRequest
 from app.services import attack_runner
@@ -39,6 +40,13 @@ def _parse_params(attack_type: str, query_params) -> dict:
 @router.websocket("/ws/attacks/{job_id}")
 async def stream_attack(websocket: WebSocket, job_id: str) -> None:
     await websocket.accept()
+
+    try:
+        get_user_from_ws_token(websocket.query_params.get("token"))
+    except AuthError as exc:
+        await websocket.send_json({"type": "error", "message": str(exc)})
+        await websocket.close(code=1008)
+        return
 
     attack_type = websocket.query_params.get("attack_type")
     if attack_type not in VALID_ATTACK_TYPES:
