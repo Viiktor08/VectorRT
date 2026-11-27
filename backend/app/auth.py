@@ -17,7 +17,7 @@ JWT_ALGORITHM = "HS256"
 if AUTH_PASSWORD == "changeme" or SECRET_KEY == "dev-secret-change-me":  # noqa: S105
     logger.warning(
         "Usando credenciales/clave de firma por defecto. "
-        "Define VECTORRT_USERNAME, VECTORRT_PASSWORD y VECTORRT_SECRET_KEY antes de exponer esto fuera de tu Mac."
+        "Define VECTORRT_USERNAME, VECTORRT_PASSWORD y VECTORRT_SECRET_KEY antes de exponer esto fuera de tu máquina."
     )
 
 _bearer_scheme = HTTPBearer(auto_error=False)

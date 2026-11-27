@@ -14,7 +14,7 @@ LOAD_TEST_TIMEOUT_MARGIN_SECONDS = 15
 def _build_load_test_command(target_ip: str, duration_seconds: int, concurrency: int) -> list[str]:
     if not is_load_test_target_allowed(target_ip):
         logger.warning("load-test rechazado, target sin servicio HTTP en whitelist: %s", target_ip)
-        raise TargetNotAllowedError(f"Target no permitido para carga/DDoS: {target_ip}")
+        raise TargetNotAllowedError(f"Target no permitido para la prueba de carga: {target_ip}")
 
     if not (1 <= duration_seconds <= MAX_LOAD_DURATION_SECONDS):
         raise InvalidAttackParamsError(f"duration_seconds debe estar entre 1 y {MAX_LOAD_DURATION_SECONDS}")

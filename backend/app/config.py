@@ -33,7 +33,7 @@ LAB_SSH_USERNAME = "labuser"
 LAB_SSH_PASSWORDS = ["123456", "labuser", "password", "admin", "letmein", "qwerty"]
 
 
-# --- Carga / DDoS pequeño (Fase 3.2) ---
+# --- Prueba de carga / DoS (Fase 3.2) ---
 # Solo tiene sentido contra un target que hable HTTP; el resto de la whitelist
 # (ssh-target, multi-target) no expone un servicio web al que aplicar siege.
 class LoadTestTarget(TypedDict):

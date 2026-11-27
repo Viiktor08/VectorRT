@@ -1,6 +1,12 @@
 # VectorRT
 
-Plataforma web para lanzar ataques controlados (escaneo de puertos, fuerza bruta SSH, carga/DDoS pequeño) contra infraestructura **propia**, aislada en una red de laboratorio local con Docker.
+Plataforma web para lanzar ataques controlados (escaneo de puertos, fuerza bruta SSH y prueba de carga / DoS) contra infraestructura **propia**, aislada en una red de laboratorio local con Docker.
+
+<!-- Demo: guarda el GIF en docs/img/demo.gif y quita este comentario.
+<p align="center">
+  <img src="docs/img/demo.gif" width="880" alt="Escaneo de puertos lanzado desde VectorRT, con la salida de nmap en directo y el histórico de ataques">
+</p>
+-->
 
 ## Uso responsable
 
@@ -23,11 +29,11 @@ Esta herramienta está diseñada **exclusivamente** para ejecutarse contra hosts
 | Herramientas de ataque | nmap, hydra, siege — instaladas dentro del contenedor del backend |
 | Infra de lab | Docker Compose, red interna aislada (`internal: true`) |
 
-El backend vive en **dos redes Docker**: la interna `vectorrt-lab` (`10.10.10.0/24`, sin salida a internet, donde también están los targets) para poder atacarlos, y una red normal `vectorrt-api` solo para publicar su puerto hacia tu Mac — Docker no publica puertos de un contenedor que esté únicamente en una red `internal`.
+El backend vive en **dos redes Docker**: la interna `vectorrt-lab` (`10.10.10.0/24`, sin salida a internet, donde también están los targets) para poder atacarlos, y una red normal `vectorrt-api` solo para publicar su puerto hacia tu máquina — Docker no publica puertos de un contenedor que esté únicamente en una red `internal`.
 
 ```mermaid
 flowchart LR
-    subgraph host["Tu Mac"]
+    subgraph host["Host"]
         browser["Navegador\n(frontend Vite, :5173)"]
     end
 
@@ -72,7 +78,6 @@ VectorRT/
     attacker/                 # Dockerfile del contenedor de validación manual
   docs/
     topologia-lab.md          # IPs, roles y puertos del laboratorio
-  roadmap.md
 ```
 
 ## Requisitos
@@ -129,7 +134,7 @@ Usa las credenciales del paso 1 (`admin` / `changeme` si no las cambiaste). La s
 ### 5. Usa la plataforma
 
 1. Selecciona un target del desplegable (poblado desde la whitelist real del backend).
-2. Lanza un ataque: **Escaneo de puertos**, **Fuerza bruta SSH**, o **Carga / DDoS pequeño** (con duración/concurrencia acotadas).
+2. Lanza un ataque: **Escaneo de puertos**, **Fuerza bruta SSH**, o **Prueba de carga (DoS)** (con duración y concurrencia acotadas).
 3. El resultado se transmite en vivo por WebSocket a la terminal en pantalla.
 4. Cada ejecución queda registrada en el **Histórico**, con botón "ver detalle" para el output completo.
 5. Si lanzas dos ataques contra el mismo target a la vez, el segundo se rechaza ("target ocupado") hasta que el primero termine.
@@ -153,18 +158,25 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-## Roadmap
+## Estado y próximos pasos
 
-El desarrollo está organizado en fases incrementales:
+Hecho:
 
-- [x] **Fase 0** — Laboratorio Docker aislado (targets + red interna sin salida a internet).
-- [x] **Fase 1** — Backend mínimo: whitelist de targets, endpoint de escaneo de puertos.
-- [x] **Fase 2** — Frontend + streaming en tiempo real por WebSocket.
-- [x] **Fase 3** — Fuerza bruta SSH, carga/DDoS, persistencia en base de datos, cola de jobs, histórico.
-- [x] **Fase 4** — Autenticación JWT, rate limiting, logging rotado, `/health` con chequeo de DB.
-- [ ] **Fase 5** (opcional) — Blue Team: detección de los propios ataques (fail2ban/Suricata) y reporte automático.
+- [x] Laboratorio Docker aislado: tres targets y una red interna sin salida a internet.
+- [x] Backend con lista blanca de targets y los tres módulos de ataque: nmap, hydra y siege.
+- [x] Frontend con la salida en directo por WebSocket.
+- [x] Persistencia en SQLite, cola de jobs (un ataque a la vez por target) e histórico.
+- [x] Autenticación JWT, rate limiting, logging rotado y `/health` con chequeo de la base de datos.
 
-Detalle completo de cada fase en [roadmap.md](roadmap.md) y de la topología de red en [docs/topologia-lab.md](docs/topologia-lab.md).
+Próximos pasos:
+
+- [ ] **Blue Team:** detectar los propios ataques con fail2ban en el target SSH y Suricata en la red del laboratorio, y mostrar en el frontend si cada ataque fue detectado o bloqueado.
+- [ ] **Informe automático** de cada sesión (ataques, targets y detecciones), como un mini informe de pentest.
+- [ ] **Escalar el backend:** Redis para el lock y el rate limiter, una cola de jobs real y PostgreSQL en lugar de SQLite.
+- [ ] **Multiusuario con roles** y registro de auditoría.
+- [ ] **Más variedad en el laboratorio:** nuevos targets y módulos de ataque.
+
+La topología de red del laboratorio está en [docs/topologia-lab.md](docs/topologia-lab.md).
 
 ## Seguridad implementada en la propia plataforma
 

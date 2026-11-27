@@ -79,7 +79,7 @@ export default function AttackButtons({ disabled, running, onRun }) {
           onClick={() => onRun('load-test', { duration_seconds: durationSeconds, concurrency })}
           className={buttonClass}
         >
-          Carga / DDoS pequeño
+          Prueba de carga (DoS)
         </button>
       </div>
     </div>
