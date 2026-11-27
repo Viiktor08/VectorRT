@@ -2,11 +2,9 @@
 
 Plataforma web para lanzar ataques controlados (escaneo de puertos, fuerza bruta SSH y prueba de carga / DoS) contra infraestructura **propia**, aislada en una red de laboratorio local con Docker.
 
-<!-- Demo: guarda el GIF en docs/img/demo.gif y quita este comentario.
 <p align="center">
   <img src="docs/img/demo.gif" width="880" alt="Escaneo de puertos lanzado desde VectorRT, con la salida de nmap en directo y el histórico de ataques">
 </p>
--->
 
 ## Uso responsable
 
